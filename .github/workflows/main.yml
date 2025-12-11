@@ -1,8 +1,8 @@
-name: Build and Release
+name: Build and Release ProxyPin
 
 on:
   push:
-    tags: [ 'v*' ]  # 只在打 tag 时构建（如 v1.0.0）
+    tags: [ 'v*' ]  # 打 tag 时自动构建 (e.g., v1.0.0)
   workflow_dispatch:  # 手动触发
 
 jobs:
@@ -10,47 +10,53 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        # 添加 ARM for Android
-        include:
-          - os: ubuntu-latest
-            target: linux-arm64
-            goos: linux
-            goarch: arm64
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64  # Windows 不支持 arm64 交叉编译
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-go@v5
+    - name: Set up Go
+      uses: actions/setup-go@v5
       with:
         go-version: '1.23'
 
-    - name: Install bindata
-      run: go install github.com/go-bindata/go-bindata/v3/cmd/go-bindata@latest
+    - name: Install go-bindata (fixed command)
+      run: go install github.com/kevinburke/go-bindata@latest
+      # 如果失败，可替换为: go install github.com/kevinburke/go-bindata/go-bindata@latest
 
-    - name: Build with assets
-      env:
-        GOOS: ${{ matrix.goos || 'linux' }}
-        GOARCH: ${{ matrix.goarch || 'amd64' }}
+    - name: Verify go-bindata installation
+      run: go-bindata --version || echo "Installation failed" && exit 1
+
+    - name: Generate bindata
       run: |
-        cd web && go-bindata -o ../assets/bindata.go -pkg assets ./... && cd ..
-        go build -tags bindata -trimpath -ldflags "-s -w" -o proxypin-${{ matrix.target || matrix.os }} .
+        cd web
+        go-bindata -o ../assets/bindata.go -pkg assets ./...
+        cd ..
 
-    - name: Upload artifacts
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: go build -tags bindata -trimpath -ldflags "-s -w" -o proxypin-\( {{ matrix.goos }}- \){{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }} .
+
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: proxypin-${{ matrix.target || matrix.os }}
-        path: proxypin-*
+        name: proxypin-\( {{ matrix.goos }}- \){{ matrix.goarch }}
+        path: proxypin-\( {{ matrix.goos }}- \){{ matrix.goarch }}*
 
-    # 可选：自动发布 Release
   release:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
     - uses: actions/download-artifact@v4
-    - uses: softprops/action-gh-release@v2
       with:
-        files: |
-          proxypin-ubuntu-latest/proxypin-linux
-          proxypin-windows-latest/proxypin-windows.exe
-          # ... 添加其他
+        path: artifacts
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: artifacts/**/*
