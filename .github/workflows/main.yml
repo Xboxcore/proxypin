@@ -23,12 +23,16 @@ jobs:
       with:
         go-version: '1.23'
 
-    - name: Install go-bindata (fixed command)
-      run: go install github.com/kevinburke/go-bindata@latest
-      # 如果失败，可替换为: go install github.com/kevinburke/go-bindata/go-bindata@latest
+    - name: Install go-bindata v4 (fixed with major version)
+      run: |
+        go get github.com/kevinburke/go-bindata/v4/...@latest
+        go install github.com/kevinburke/go-bindata/v4/go-bindata@latest
+      # 这会下载 v4 模块并安装可执行文件到 $GOPATH/bin
 
     - name: Verify go-bindata installation
-      run: go-bindata --version || echo "Installation failed" && exit 1
+      run: |
+        go-bindata version  # v4 用 'version' 而非 '--version'
+        # 如果失败，输出调试：ls $GOPATH/bin/go-bindata
 
     - name: Generate bindata
       run: |
